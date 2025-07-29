@@ -56,8 +56,9 @@ export const HomePage: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
-              <span className="text-blue-600 block">Linkware</span>
-              IT Solutions for Capital Markets
+              <span className="text-blue-600">Linkware</span>
+              <span className="text-2xl md:text-3xl text-gray-600 ml-2">Consulting</span>
+              <span className="block text-xl md:text-2xl mt-4 text-gray-700">IT Solutions for Capital Markets</span>
             </h1>
             <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
               Empowering financial professionals with cutting-edge technology solutions, 

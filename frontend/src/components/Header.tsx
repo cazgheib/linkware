@@ -40,6 +40,7 @@ export const Header: React.FC = () => {
                 <span className="text-white font-bold text-sm">LW</span>
               </div>
               <span className="text-xl font-bold text-gray-900">Linkware</span>
+              <span className="text-sm font-normal text-gray-600 ml-1">Consulting</span>
             </Link>
           </div>
 

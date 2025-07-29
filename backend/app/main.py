@@ -10,7 +10,7 @@ import uuid
 import stripe
 import os
 
-app = FastAPI(title="IT Capital Markets Platform", version="1.0.0")
+app = FastAPI(title="Linkware Consulting Platform", version="1.0.0")
 
 # Disable CORS. Do not remove this for full-stack development.
 app.add_middleware(
@@ -290,10 +290,10 @@ async def startup_event():
     admin_id = str(uuid.uuid4())
     admin_user = {
         "id": admin_id,
-        "email": "admin@itcapitalmarkets.com",
+        "email": "admin@linkware.com",
         "password": hash_password("admin123"),
-        "full_name": "IT Capital Markets Admin",
-        "company": "IT Capital Markets",
+        "full_name": "Linkware Consulting Admin",
+        "company": "Linkware Consulting",
         "membership_type": "enterprise",
         "created_at": datetime.utcnow()
     }

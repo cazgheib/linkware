@@ -103,7 +103,7 @@ export const LoginPage: React.FC = () => {
             <div className="mt-4 p-4 bg-blue-50 rounded-lg">
               <p className="text-sm text-blue-800 font-medium mb-2">Demo Account:</p>
               <p className="text-xs text-blue-700">
-                Email: admin@itcapitalmarkets.com<br />
+                Email: admin@linkware.com<br />
                 Password: admin123
               </p>
             </div>
