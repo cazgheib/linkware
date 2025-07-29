@@ -37,9 +37,9 @@ export const Header: React.FC = () => {
           <div className="flex items-center">
             <Link to="/" className="flex items-center space-x-2">
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">IT</span>
+                <span className="text-white font-bold text-sm">LW</span>
               </div>
-              <span className="text-xl font-bold text-gray-900">Capital Markets</span>
+              <span className="text-xl font-bold text-gray-900">Linkware</span>
             </Link>
           </div>
 
