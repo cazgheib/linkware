@@ -65,15 +65,14 @@ export const HomePage: React.FC = () => {
               educational resources, and industry insights for modern capital markets.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              {user ? (
-                <Button size="lg" asChild>
-                  <Link to="/blog" className="flex items-center space-x-2">
-                    <BookOpen size={20} />
-                    <span>Explore Content</span>
-                    <ArrowRight size={16} />
-                  </Link>
-                </Button>
-              ) : (
+              <Button size="lg" asChild>
+                <Link to="/blog" className="flex items-center space-x-2">
+                  <BookOpen size={20} />
+                  <span>Explore Content</span>
+                  <ArrowRight size={16} />
+                </Link>
+              </Button>
+              {!user && (
                 <>
                   <Button size="lg" asChild>
                     <Link to="/register" className="flex items-center space-x-2">
@@ -200,8 +199,8 @@ export const HomePage: React.FC = () => {
             capital markets technology needs.
           </p>
           <Button size="lg" variant="secondary" asChild>
-            <Link to={user ? "/blog" : "/register"} className="flex items-center space-x-2">
-              <span>{user ? "Explore Content" : "Get Started Today"}</span>
+            <Link to="/blog" className="flex items-center space-x-2">
+              <span>Explore Content</span>
               <ArrowRight size={16} />
             </Link>
           </Button>

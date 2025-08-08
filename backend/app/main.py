@@ -108,6 +108,19 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
 
+def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))):
+    if credentials is None:
+        return None
+    try:
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        if user_id is None:
+            return None
+        user = users_db.get(user_id)
+        return user
+    except jwt.PyJWTError:
+        return None
+
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
@@ -217,11 +230,11 @@ async def upgrade_membership(
 @app.get("/api/blog/posts")
 async def get_blog_posts(
     category: Optional[str] = None,
-    current_user: dict = Depends(get_current_user)
+    current_user: Optional[dict] = Depends(get_current_user_optional)
 ):
     posts = list(blog_posts_db.values())
     
-    if current_user["membership_type"] == "free":
+    if current_user is None or current_user["membership_type"] == "free":
         posts = [post for post in posts if not post["is_premium"]]
     
     if category:
@@ -232,12 +245,12 @@ async def get_blog_posts(
     return [BlogPost(**post) for post in posts]
 
 @app.get("/api/blog/posts/{post_id}")
-async def get_blog_post(post_id: str, current_user: dict = Depends(get_current_user)):
+async def get_blog_post(post_id: str, current_user: Optional[dict] = Depends(get_current_user_optional)):
     post = blog_posts_db.get(post_id)
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
     
-    if post["is_premium"] and current_user["membership_type"] == "free":
+    if post["is_premium"] and (current_user is None or current_user["membership_type"] == "free"):
         raise HTTPException(status_code=403, detail="Premium membership required")
     
     return BlogPost(**post)
