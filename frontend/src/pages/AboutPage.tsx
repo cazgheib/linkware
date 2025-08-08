@@ -8,6 +8,7 @@ interface AboutContent {
   id: string
   title: string
   content: string
+  image_url?: string
   updated_at: string
 }
 
@@ -18,6 +19,10 @@ export const AboutPage: React.FC = () => {
   const [editing, setEditing] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editContent, setEditContent] = useState('')
+  const [editImageUrl, setEditImageUrl] = useState<string | null>(null)
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
 
   const isAdmin = user?.membership_type === 'enterprise' && user?.email === 'admin@linkware.com'
 
@@ -31,6 +36,7 @@ export const AboutPage: React.FC = () => {
       setAboutContent(response.data)
       setEditTitle(response.data.title)
       setEditContent(response.data.content)
+      setEditImageUrl(response.data.image_url || null)
     } catch (error) {
       console.error('Error fetching about content:', error)
     } finally {
@@ -38,16 +44,55 @@ export const AboutPage: React.FC = () => {
     }
   }
 
+  const handleImageUpload = async (file: File): Promise<string | null> => {
+    if (!isAdmin) return null
+
+    try {
+      setUploading(true)
+      const token = localStorage.getItem('token')
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await axios.post(
+        `${API_BASE_URL}/api/content/about/upload-image`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data'
+          }
+        }
+      )
+
+      return response.data.image_url
+    } catch (error) {
+      console.error('Error uploading image:', error)
+      return null
+    } finally {
+      setUploading(false)
+    }
+  }
+
   const handleSave = async () => {
     if (!isAdmin) return
 
     try {
+      let finalImageUrl = editImageUrl
+
+      if (imageFile) {
+        const uploadedImageUrl = await handleImageUpload(imageFile)
+        if (uploadedImageUrl) {
+          finalImageUrl = uploadedImageUrl
+        }
+      }
+
       const token = localStorage.getItem('token')
       const response = await axios.put(
         `${API_BASE_URL}/api/content/about`,
         {
           title: editTitle,
-          content: editContent
+          content: editContent,
+          image_url: finalImageUrl
         },
         {
           headers: {
@@ -57,6 +102,8 @@ export const AboutPage: React.FC = () => {
       )
       setAboutContent(response.data)
       setEditing(false)
+      setImageFile(null)
+      setImagePreview(null)
     } catch (error) {
       console.error('Error updating about content:', error)
     }
@@ -65,7 +112,41 @@ export const AboutPage: React.FC = () => {
   const handleCancel = () => {
     setEditTitle(aboutContent?.title || '')
     setEditContent(aboutContent?.content || '')
+    setEditImageUrl(aboutContent?.image_url || null)
+    setImageFile(null)
+    setImagePreview(null)
     setEditing(false)
+  }
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+      if (!allowedTypes.includes(file.type)) {
+        alert('Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.')
+        return
+      }
+
+      const maxSize = 5 * 1024 * 1024 // 5MB
+      if (file.size > maxSize) {
+        alert('File too large. Maximum size is 5MB.')
+        return
+      }
+
+      setImageFile(file)
+      
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setImagePreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleRemoveImage = () => {
+    setEditImageUrl(null)
+    setImageFile(null)
+    setImagePreview(null)
   }
 
   if (loading) {
@@ -95,9 +176,10 @@ export const AboutPage: React.FC = () => {
               <div className="space-x-2">
                 <button
                   onClick={handleSave}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                  disabled={uploading}
+                  className={`px-4 py-2 rounded-lg transition-colors text-white ${uploading ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
                 >
-                  Save
+                  {uploading ? 'Uploading...' : 'Save'}
                 </button>
                 <button
                   onClick={handleCancel}
@@ -131,9 +213,46 @@ export const AboutPage: React.FC = () => {
                 <textarea
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
-                  rows={20}
+                  rows={15}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Image
+                </label>
+                <div className="space-y-4">
+                  {/* Current or preview image */}
+                  {(imagePreview || editImageUrl) && (
+                    <div className="relative">
+                      <img
+                        src={imagePreview || `${API_BASE_URL}${editImageUrl}`}
+                        alt="About us"
+                        className="max-w-md max-h-64 object-contain border border-gray-300 rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleRemoveImage}
+                        className="absolute top-2 right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-700"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
+                  
+                  {/* File input */}
+                  <div>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                      onChange={handleImageChange}
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Supported formats: JPEG, PNG, GIF, WebP. Max size: 5MB.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           ) : (
@@ -141,6 +260,17 @@ export const AboutPage: React.FC = () => {
               <h1 className="text-4xl font-bold text-gray-900 mb-8">
                 {aboutContent?.title || 'About Us'}
               </h1>
+              
+              {aboutContent?.image_url && (
+                <div className="mb-8">
+                  <img
+                    src={`${API_BASE_URL}${aboutContent.image_url}`}
+                    alt="About us"
+                    className="max-w-full h-auto rounded-lg shadow-lg"
+                  />
+                </div>
+              )}
+              
               <div className="text-gray-700 whitespace-pre-wrap">
                 {aboutContent?.content || 'Content not available.'}
               </div>
