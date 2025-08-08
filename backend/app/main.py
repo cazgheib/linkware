@@ -14,6 +14,10 @@ import shutil
 from pathlib import Path
 from google.auth.transport import requests
 from google.oauth2 import id_token
+from sqlalchemy.orm import Session
+from sqlalchemy import desc
+from app.database import get_db, User as UserModel, BlogPost as BlogPostModel, Content as ContentModel, init_database
+import json
 
 app = FastAPI(title="Linkware Consulting Platform", version="1.0.0")
 
@@ -28,10 +32,6 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
-users_db = {}
-blog_posts_db = {}
-memberships_db = {}
-content_db = {}
 
 SECRET_KEY = "your-secret-key-change-in-production"
 ALGORITHM = "HS256"
@@ -113,20 +113,28 @@ def create_access_token(data: dict):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()), db: Session = Depends(get_db)):
     try:
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-        user = users_db.get(user_id)
+        user = db.query(UserModel).filter(UserModel.id == user_id).first()
         if user is None:
             raise HTTPException(status_code=401, detail="User not found")
-        return user
+        return {
+            "id": user.id,
+            "email": user.email,
+            "password": user.password,
+            "full_name": user.full_name,
+            "company": user.company,
+            "membership_type": user.membership_type,
+            "created_at": user.created_at
+        }
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
 
-def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))):
+def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)), db: Session = Depends(get_db)):
     if credentials is None:
         return None
     try:
@@ -134,8 +142,18 @@ def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials
         user_id = payload.get("sub")
         if user_id is None:
             return None
-        user = users_db.get(user_id)
-        return user
+        user = db.query(UserModel).filter(UserModel.id == user_id).first()
+        if user is None:
+            return None
+        return {
+            "id": user.id,
+            "email": user.email,
+            "password": user.password,
+            "full_name": user.full_name,
+            "company": user.company,
+            "membership_type": user.membership_type,
+            "created_at": user.created_at
+        }
     except jwt.PyJWTError:
         return None
 
@@ -144,49 +162,66 @@ async def healthz():
     return {"status": "ok"}
 
 @app.post("/api/auth/register")
-async def register(user_data: UserCreate):
-    if any(user["email"] == user_data.email for user in users_db.values()):
+async def register(user_data: UserCreate, db: Session = Depends(get_db)):
+    existing_user = db.query(UserModel).filter(UserModel.email == user_data.email).first()
+    if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     
     user_id = str(uuid.uuid4())
     hashed_password = hash_password(user_data.password)
     
-    user = {
-        "id": user_id,
-        "email": user_data.email,
-        "password": hashed_password,
-        "full_name": user_data.full_name,
-        "company": user_data.company,
-        "membership_type": "free",
-        "created_at": datetime.utcnow()
-    }
+    db_user = UserModel(
+        id=user_id,
+        email=user_data.email,
+        password=hashed_password,
+        full_name=user_data.full_name,
+        company=user_data.company,
+        membership_type="free",
+        created_at=datetime.utcnow()
+    )
     
-    users_db[user_id] = user
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
     
     access_token = create_access_token(data={"sub": user_id})
     
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": User(**{k: v for k, v in user.items() if k != "password"})
+        "user": {
+            "id": db_user.id,
+            "email": db_user.email,
+            "full_name": db_user.full_name,
+            "company": db_user.company,
+            "membership_type": db_user.membership_type,
+            "created_at": db_user.created_at
+        }
     }
 
 @app.post("/api/auth/login")
-async def login(user_data: UserLogin):
-    user = next((u for u in users_db.values() if u["email"] == user_data.email), None)
-    if not user or not verify_password(user_data.password, user["password"]):
+async def login(user_data: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(UserModel).filter(UserModel.email == user_data.email).first()
+    if not user or not verify_password(user_data.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
-    access_token = create_access_token(data={"sub": user["id"]})
+    access_token = create_access_token(data={"sub": user.id})
     
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": User(**{k: v for k, v in user.items() if k != "password"})
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "company": user.company,
+            "membership_type": user.membership_type,
+            "created_at": user.created_at
+        }
     }
 
 @app.post("/api/auth/google")
-async def google_login(google_data: GoogleLogin):
+async def google_login(google_data: GoogleLogin, db: Session = Depends(get_db)):
     try:
         idinfo = id_token.verify_oauth2_token(
             google_data.token, 
@@ -200,27 +235,36 @@ async def google_login(google_data: GoogleLogin):
         email = idinfo['email']
         name = idinfo.get('name', email.split('@')[0])
         
-        user = next((u for u in users_db.values() if u["email"] == email), None)
+        user = db.query(UserModel).filter(UserModel.email == email).first()
         
         if not user:
             user_id = str(uuid.uuid4())
-            user = {
-                "id": user_id,
-                "email": email,
-                "password": "",
-                "full_name": name,
-                "company": None,
-                "membership_type": "free",
-                "created_at": datetime.utcnow()
-            }
-            users_db[user_id] = user
+            user = UserModel(
+                id=user_id,
+                email=email,
+                password="",
+                full_name=name,
+                company=None,
+                membership_type="free",
+                created_at=datetime.utcnow()
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
         
-        access_token = create_access_token(data={"sub": user["id"]})
+        access_token = create_access_token(data={"sub": user.id})
         
         return {
             "access_token": access_token,
             "token_type": "bearer",
-            "user": User(**{k: v for k, v in user.items() if k != "password"})
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+                "company": user.company,
+                "membership_type": user.membership_type,
+                "created_at": user.created_at
+            }
         }
         
     except ValueError as e:
@@ -235,48 +279,79 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
 @app.post("/api/membership/upgrade")
 async def upgrade_membership(
     membership_data: MembershipUpgrade,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     if membership_data.membership_type not in ["premium", "enterprise"]:
         raise HTTPException(status_code=400, detail="Invalid membership type")
     
-    current_user["membership_type"] = membership_data.membership_type
-    users_db[current_user["id"]] = current_user
+    user = db.query(UserModel).filter(UserModel.id == current_user["id"]).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user.membership_type = membership_data.membership_type
+    db.commit()
     
     return {"message": f"Membership upgraded to {membership_data.membership_type}"}
 
 @app.get("/api/blog/posts")
 async def get_blog_posts(
     category: Optional[str] = None,
-    current_user: Optional[dict] = Depends(get_current_user_optional)
+    current_user: Optional[dict] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
 ):
-    posts = list(blog_posts_db.values())
+    query = db.query(BlogPostModel)
     
     if current_user is None or current_user["membership_type"] == "free":
-        posts = [post for post in posts if not post["is_premium"]]
+        query = query.filter(BlogPostModel.is_premium == False)
     
     if category:
-        posts = [post for post in posts if post["category"].lower() == category.lower()]
+        query = query.filter(BlogPostModel.category == category)
     
-    posts.sort(key=lambda x: x["created_at"], reverse=True)
+    posts = query.order_by(desc(BlogPostModel.created_at)).all()
     
-    return [BlogPost(**post) for post in posts]
+    result = []
+    for post in posts:
+        result.append({
+            "id": post.id,
+            "title": post.title,
+            "content": post.content,
+            "category": post.category,
+            "tags": post.get_tags(),
+            "is_premium": post.is_premium,
+            "author_id": post.author_id,
+            "created_at": post.created_at,
+            "updated_at": post.updated_at
+        })
+    
+    return result
 
 @app.get("/api/blog/posts/{post_id}")
-async def get_blog_post(post_id: str, current_user: Optional[dict] = Depends(get_current_user_optional)):
-    post = blog_posts_db.get(post_id)
+async def get_blog_post(post_id: str, current_user: Optional[dict] = Depends(get_current_user_optional), db: Session = Depends(get_db)):
+    post = db.query(BlogPostModel).filter(BlogPostModel.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
     
-    if post["is_premium"] and (current_user is None or current_user["membership_type"] == "free"):
+    if post.is_premium and (current_user is None or current_user["membership_type"] == "free"):
         raise HTTPException(status_code=403, detail="Premium membership required")
     
-    return BlogPost(**post)
+    return {
+        "id": post.id,
+        "title": post.title,
+        "content": post.content,
+        "category": post.category,
+        "tags": post.get_tags(),
+        "is_premium": post.is_premium,
+        "author_id": post.author_id,
+        "created_at": post.created_at,
+        "updated_at": post.updated_at
+    }
 
 @app.post("/api/blog/posts")
 async def create_blog_post(
     post_data: BlogPostCreate,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     if current_user["membership_type"] == "free":
         raise HTTPException(status_code=403, detail="Premium membership required to create posts")
@@ -284,35 +359,51 @@ async def create_blog_post(
     post_id = str(uuid.uuid4())
     now = datetime.utcnow()
     
-    post = {
-        "id": post_id,
-        "title": post_data.title,
-        "content": post_data.content,
-        "category": post_data.category,
-        "tags": post_data.tags,
-        "is_premium": post_data.is_premium,
-        "author_id": current_user["id"],
-        "created_at": now,
-        "updated_at": now
+    blog_post = BlogPostModel(
+        id=post_id,
+        title=post_data.title,
+        content=post_data.content,
+        category=post_data.category,
+        is_premium=post_data.is_premium,
+        author_id=current_user["id"],
+        created_at=now,
+        updated_at=now
+    )
+    blog_post.set_tags(post_data.tags)
+    
+    db.add(blog_post)
+    db.commit()
+    db.refresh(blog_post)
+    
+    return {
+        "id": blog_post.id,
+        "title": blog_post.title,
+        "content": blog_post.content,
+        "category": blog_post.category,
+        "tags": blog_post.get_tags(),
+        "is_premium": blog_post.is_premium,
+        "author_id": blog_post.author_id,
+        "created_at": blog_post.created_at,
+        "updated_at": blog_post.updated_at
     }
-    
-    blog_posts_db[post_id] = post
-    
-    return BlogPost(**post)
 
 @app.get("/api/blog/categories")
-async def get_blog_categories():
-    categories = set()
-    for post in blog_posts_db.values():
-        categories.add(post["category"])
-    return list(categories)
+async def get_blog_categories(db: Session = Depends(get_db)):
+    categories = db.query(BlogPostModel.category).distinct().all()
+    return [category[0] for category in categories]
 
 @app.get("/api/content/about")
-async def get_about_content():
-    about_content = content_db.get("about")
+async def get_about_content(db: Session = Depends(get_db)):
+    about_content = db.query(ContentModel).filter(ContentModel.id == "about").first()
     if not about_content:
         raise HTTPException(status_code=404, detail="About content not found")
-    return Content(**about_content)
+    return {
+        "id": about_content.id,
+        "title": about_content.title,
+        "content": about_content.content,
+        "image_url": about_content.image_url,
+        "updated_at": about_content.updated_at
+    }
 
 @app.post("/api/content/about/upload-image")
 async def upload_about_image(
@@ -344,22 +435,31 @@ async def upload_about_image(
 @app.put("/api/content/about")
 async def update_about_content(
     content_data: ContentUpdate,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     if current_user["membership_type"] != "enterprise" or current_user["email"] != "admin@linkware.com":
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    about_content = {
-        "id": "about",
-        "title": content_data.title,
-        "content": content_data.content,
-        "image_url": content_data.image_url,
-        "updated_at": datetime.utcnow()
+    about_content = db.query(ContentModel).filter(ContentModel.id == "about").first()
+    if not about_content:
+        raise HTTPException(status_code=404, detail="About content not found")
+    
+    about_content.title = content_data.title
+    about_content.content = content_data.content
+    about_content.image_url = content_data.image_url
+    about_content.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(about_content)
+    
+    return {
+        "id": about_content.id,
+        "title": about_content.title,
+        "content": about_content.content,
+        "image_url": about_content.image_url,
+        "updated_at": about_content.updated_at
     }
-    
-    content_db["about"] = about_content
-    
-    return Content(**about_content)
 
 @app.post("/api/membership/create-payment-intent")
 async def create_payment_intent(
@@ -395,7 +495,7 @@ async def create_payment_intent(
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/membership/webhook")
-async def stripe_webhook(request):
+async def stripe_webhook(request, db: Session = Depends(get_db)):
     payload = await request.body()
     sig_header = request.headers.get('stripe-signature')
     
@@ -413,94 +513,13 @@ async def stripe_webhook(request):
         user_id = payment_intent['metadata']['user_id']
         membership_type = payment_intent['metadata']['membership_type']
         
-        if user_id in users_db:
-            users_db[user_id]['membership_type'] = membership_type
+        user = db.query(UserModel).filter(UserModel.id == user_id).first()
+        if user:
+            user.membership_type = membership_type
+            db.commit()
     
     return {"status": "success"}
 
 @app.on_event("startup")
 async def startup_event():
-    admin_id = str(uuid.uuid4())
-    admin_user = {
-        "id": admin_id,
-        "email": "admin@linkware.com",
-        "password": hash_password("admin123"),
-        "full_name": "Linkware Consulting Admin",
-        "company": "Linkware Consulting",
-        "membership_type": "enterprise",
-        "created_at": datetime.utcnow()
-    }
-    users_db[admin_id] = admin_user
-    
-    sample_posts = [
-        {
-            "title": "Introduction to Algorithmic Trading in Capital Markets",
-            "content": "Algorithmic trading has revolutionized the way financial markets operate. This comprehensive guide covers the fundamentals of automated trading systems, their impact on market efficiency, and the technology stack required for implementation.",
-            "category": "Trading Technology",
-            "tags": ["algorithmic-trading", "fintech", "automation"],
-            "is_premium": False
-        },
-        {
-            "title": "Risk Management Systems: Building Robust Financial Infrastructure",
-            "content": "Modern capital markets require sophisticated risk management systems to handle complex financial instruments and market volatility. Learn about real-time risk monitoring, stress testing, and regulatory compliance frameworks.",
-            "category": "Risk Management",
-            "tags": ["risk-management", "compliance", "infrastructure"],
-            "is_premium": True
-        },
-        {
-            "title": "Cloud Computing in Financial Services: Opportunities and Challenges",
-            "content": "The adoption of cloud technologies in financial services presents both opportunities for innovation and challenges in security and compliance. Explore best practices for cloud migration in capital markets.",
-            "category": "Cloud Technology",
-            "tags": ["cloud-computing", "security", "fintech"],
-            "is_premium": False
-        }
-    ]
-    
-    for post_data in sample_posts:
-        post_id = str(uuid.uuid4())
-        now = datetime.utcnow()
-        
-        post = {
-            "id": post_id,
-            "author_id": admin_id,
-            "created_at": now,
-            "updated_at": now,
-            **post_data
-        }
-        
-        blog_posts_db[post_id] = post
-    
-    default_about_content = {
-        "id": "about",
-        "title": "About Linkware Consulting",
-        "content": """Welcome to Linkware Consulting, your trusted partner in IT solutions for capital markets.
-
-Founded with a vision to bridge the gap between cutting-edge technology and financial services, we specialize in delivering innovative solutions that empower financial professionals to excel in today's dynamic markets.
-
-Our Expertise:
-• Algorithmic Trading Systems
-• Risk Management Infrastructure  
-• Cloud Computing Solutions
-• Regulatory Compliance Technology
-• Market Data Analytics
-• High-Performance Computing
-
-Our Mission:
-To provide world-class technology consulting and educational resources that enable financial institutions and professionals to leverage the latest innovations in capital markets technology.
-
-Our Team:
-Our experienced consultants combine deep financial markets knowledge with technical expertise in modern software development, cloud architecture, and data analytics. We understand the unique challenges facing capital markets firms and deliver solutions that are both technically sound and business-focused.
-
-Why Choose Linkware:
-• Industry-specific expertise in capital markets technology
-• Proven track record with leading financial institutions
-• Commitment to innovation and best practices
-• Comprehensive educational resources and thought leadership
-• Flexible engagement models to meet your specific needs
-
-Contact us today to learn how we can help transform your technology infrastructure and accelerate your business objectives.""",
-        "image_url": None,
-        "updated_at": datetime.utcnow()
-    }
-    
-    content_db["about"] = default_about_content
+    init_database()
