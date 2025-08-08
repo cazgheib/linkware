@@ -16,6 +16,7 @@ interface AuthContextType {
   user: User | null
   loading: boolean
   login: (email: string, password: string) => Promise<void>
+  googleLogin: (token: string) => Promise<void>
   register: (email: string, password: string, fullName: string, company?: string) => Promise<void>
   logout: () => void
   refreshUser: () => Promise<void>
@@ -61,6 +62,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(userData)
     } catch (error) {
       console.error('Login error:', error)
+      throw error
+    }
+  }
+
+  const googleLogin = async (token: string) => {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/api/auth/google`, {
+        token
+      })
+      
+      const { access_token, user: userData } = response.data
+      setAuthToken(access_token)
+      setUser(userData)
+    } catch (error) {
+      console.error('Google login error:', error)
       throw error
     }
   }
@@ -119,6 +135,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     user,
     loading,
     login,
+    googleLogin,
     register,
     logout,
     refreshUser

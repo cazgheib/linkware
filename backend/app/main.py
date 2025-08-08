@@ -9,6 +9,8 @@ import bcrypt
 import uuid
 import stripe
 import os
+from google.auth.transport import requests
+from google.oauth2 import id_token
 
 app = FastAPI(title="Linkware Consulting Platform", version="1.0.0")
 
@@ -43,6 +45,9 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+class GoogleLogin(BaseModel):
+    token: str
 
 class User(BaseModel):
     id: str
@@ -148,6 +153,49 @@ async def login(user_data: UserLogin):
         "token_type": "bearer",
         "user": User(**{k: v for k, v in user.items() if k != "password"})
     }
+
+@app.post("/api/auth/google")
+async def google_login(google_data: GoogleLogin):
+    try:
+        idinfo = id_token.verify_oauth2_token(
+            google_data.token, 
+            requests.Request(), 
+            os.getenv("GOOGLE_CLIENT_ID")
+        )
+        
+        if idinfo['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:
+            raise ValueError('Wrong issuer.')
+        
+        email = idinfo['email']
+        name = idinfo.get('name', email.split('@')[0])
+        
+        user = next((u for u in users_db.values() if u["email"] == email), None)
+        
+        if not user:
+            user_id = str(uuid.uuid4())
+            user = {
+                "id": user_id,
+                "email": email,
+                "password": "",
+                "full_name": name,
+                "company": None,
+                "membership_type": "free",
+                "created_at": datetime.utcnow()
+            }
+            users_db[user_id] = user
+        
+        access_token = create_access_token(data={"sub": user["id"]})
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": User(**{k: v for k, v in user.items() if k != "password"})
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail="Invalid Google token")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Google authentication failed")
 
 @app.get("/api/auth/me")
 async def get_current_user_info(current_user: dict = Depends(get_current_user)):
