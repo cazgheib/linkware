@@ -16,7 +16,7 @@ from google.auth.transport import requests
 from google.oauth2 import id_token
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from app.database import get_db, User, BlogPost, Content, init_database
+from app.database import get_db, User as UserModel, BlogPost as BlogPostModel, Content as ContentModel, init_database
 import json
 
 app = FastAPI(title="Linkware Consulting Platform", version="1.0.0")
@@ -119,7 +119,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(HTTPBea
         user_id = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-        user = db.query(User).filter(User.id == user_id).first()
+        user = db.query(UserModel).filter(UserModel.id == user_id).first()
         if user is None:
             raise HTTPException(status_code=401, detail="User not found")
         return {
@@ -142,7 +142,7 @@ def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials
         user_id = payload.get("sub")
         if user_id is None:
             return None
-        user = db.query(User).filter(User.id == user_id).first()
+        user = db.query(UserModel).filter(UserModel.id == user_id).first()
         if user is None:
             return None
         return {
@@ -163,14 +163,14 @@ async def healthz():
 
 @app.post("/api/auth/register")
 async def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    existing_user = db.query(User).filter(User.email == user_data.email).first()
+    existing_user = db.query(UserModel).filter(UserModel.email == user_data.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     
     user_id = str(uuid.uuid4())
     hashed_password = hash_password(user_data.password)
     
-    db_user = User(
+    db_user = UserModel(
         id=user_id,
         email=user_data.email,
         password=hashed_password,
@@ -201,7 +201,7 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
 
 @app.post("/api/auth/login")
 async def login(user_data: UserLogin, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == user_data.email).first()
+    user = db.query(UserModel).filter(UserModel.email == user_data.email).first()
     if not user or not verify_password(user_data.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
@@ -235,11 +235,11 @@ async def google_login(google_data: GoogleLogin, db: Session = Depends(get_db)):
         email = idinfo['email']
         name = idinfo.get('name', email.split('@')[0])
         
-        user = db.query(User).filter(User.email == email).first()
+        user = db.query(UserModel).filter(UserModel.email == email).first()
         
         if not user:
             user_id = str(uuid.uuid4())
-            user = User(
+            user = UserModel(
                 id=user_id,
                 email=email,
                 password="",
@@ -285,7 +285,7 @@ async def upgrade_membership(
     if membership_data.membership_type not in ["premium", "enterprise"]:
         raise HTTPException(status_code=400, detail="Invalid membership type")
     
-    user = db.query(User).filter(User.id == current_user["id"]).first()
+    user = db.query(UserModel).filter(UserModel.id == current_user["id"]).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
@@ -300,15 +300,15 @@ async def get_blog_posts(
     current_user: Optional[dict] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
-    query = db.query(BlogPost)
+    query = db.query(BlogPostModel)
     
     if current_user is None or current_user["membership_type"] == "free":
-        query = query.filter(BlogPost.is_premium == False)
+        query = query.filter(BlogPostModel.is_premium == False)
     
     if category:
-        query = query.filter(BlogPost.category == category)
+        query = query.filter(BlogPostModel.category == category)
     
-    posts = query.order_by(desc(BlogPost.created_at)).all()
+    posts = query.order_by(desc(BlogPostModel.created_at)).all()
     
     result = []
     for post in posts:
@@ -328,7 +328,7 @@ async def get_blog_posts(
 
 @app.get("/api/blog/posts/{post_id}")
 async def get_blog_post(post_id: str, current_user: Optional[dict] = Depends(get_current_user_optional), db: Session = Depends(get_db)):
-    post = db.query(BlogPost).filter(BlogPost.id == post_id).first()
+    post = db.query(BlogPostModel).filter(BlogPostModel.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
     
@@ -359,7 +359,7 @@ async def create_blog_post(
     post_id = str(uuid.uuid4())
     now = datetime.utcnow()
     
-    blog_post = BlogPost(
+    blog_post = BlogPostModel(
         id=post_id,
         title=post_data.title,
         content=post_data.content,
@@ -389,12 +389,12 @@ async def create_blog_post(
 
 @app.get("/api/blog/categories")
 async def get_blog_categories(db: Session = Depends(get_db)):
-    categories = db.query(BlogPost.category).distinct().all()
+    categories = db.query(BlogPostModel.category).distinct().all()
     return [category[0] for category in categories]
 
 @app.get("/api/content/about")
 async def get_about_content(db: Session = Depends(get_db)):
-    about_content = db.query(Content).filter(Content.id == "about").first()
+    about_content = db.query(ContentModel).filter(ContentModel.id == "about").first()
     if not about_content:
         raise HTTPException(status_code=404, detail="About content not found")
     return {
@@ -441,7 +441,7 @@ async def update_about_content(
     if current_user["membership_type"] != "enterprise" or current_user["email"] != "admin@linkware.com":
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    about_content = db.query(Content).filter(Content.id == "about").first()
+    about_content = db.query(ContentModel).filter(ContentModel.id == "about").first()
     if not about_content:
         raise HTTPException(status_code=404, detail="About content not found")
     
@@ -513,7 +513,7 @@ async def stripe_webhook(request, db: Session = Depends(get_db)):
         user_id = payment_intent['metadata']['user_id']
         membership_type = payment_intent['metadata']['membership_type']
         
-        user = db.query(User).filter(User.id == user_id).first()
+        user = db.query(UserModel).filter(UserModel.id == user_id).first()
         if user:
             user.membership_type = membership_type
             db.commit()
