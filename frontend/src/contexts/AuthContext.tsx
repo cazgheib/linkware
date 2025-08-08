@@ -83,6 +83,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const register = async (email: string, password: string, fullName: string, company?: string) => {
     try {
+      console.log('Attempting registration with:', { email, fullName, company, apiUrl: API_BASE_URL })
+      
       const response = await axios.post(`${API_BASE_URL}/api/auth/register`, {
         email,
         password,
@@ -90,11 +92,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         company
       })
       
+      console.log('Registration successful:', { userId: response.data.user?.id, email: response.data.user?.email })
+      
       const { access_token, user: userData } = response.data
       setAuthToken(access_token)
       setUser(userData)
-    } catch (error) {
-      console.error('Registration error:', error)
+    } catch (error: any) {
+      console.error('Registration error details:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        code: error.code,
+        apiUrl: API_BASE_URL
+      })
       throw error
     }
   }

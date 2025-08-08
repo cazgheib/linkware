@@ -55,7 +55,17 @@ export const RegisterPage: React.FC = () => {
       )
       navigate('/blog')
     } catch (error: any) {
-      setError(error.response?.data?.detail || 'Registration failed. Please try again.')
+      console.error('Registration error details:', error)
+      
+      if (error.code === 'NETWORK_ERROR' || error.message === 'Network Error') {
+        setError('Unable to connect to server. Please check your internet connection and try again.')
+      } else if (error.response) {
+        setError(error.response.data?.detail || `Registration failed: ${error.response.status} ${error.response.statusText}`)
+      } else if (error.request) {
+        setError('No response from server. Please check if the backend is running and try again.')
+      } else {
+        setError(`Registration failed: ${error.message || 'Unknown error occurred. Please try again.'}`)
+      }
     } finally {
       setLoading(false)
     }
