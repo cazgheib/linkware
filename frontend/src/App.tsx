@@ -16,7 +16,7 @@ function AppContent() {
       <main>
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/blog" element={<ProtectedRoute><BlogPage /></ProtectedRoute>} />
+          <Route path="/blog" element={<BlogPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/membership" element={<ProtectedRoute><MembershipPage /></ProtectedRoute>} />

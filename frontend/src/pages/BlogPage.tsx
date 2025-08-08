@@ -68,13 +68,20 @@ export const BlogPage: React.FC = () => {
 
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!user) return
+    
     try {
+      const token = localStorage.getItem('token')
       const postData = {
         ...newPost,
         tags: newPost.tags.split(',').map(tag => tag.trim()).filter(tag => tag)
       }
       
-      await axios.post(`${API_BASE_URL}/api/blog/posts`, postData)
+      await axios.post(`${API_BASE_URL}/api/blog/posts`, postData, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
       
       setNewPost({
         title: '',
@@ -99,7 +106,7 @@ export const BlogPage: React.FC = () => {
     })
   }
 
-  const canCreatePosts = user?.membership_type !== 'free'
+  const canCreatePosts = user && user.membership_type !== 'free'
 
   if (loading) {
     return (
