@@ -9,6 +9,7 @@ import { RegisterPage } from './pages/RegisterPage'
 import { MembershipPage } from './pages/MembershipPage'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { TermsPage } from './pages/TermsPage'
+import { AboutPage } from './pages/AboutPage'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import './App.css'
 
@@ -25,6 +26,7 @@ function AppContent() {
           <Route path="/membership" element={<ProtectedRoute><MembershipPage /></ProtectedRoute>} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/terms" element={<TermsPage />} />
+          <Route path="/about" element={<AboutPage />} />
         </Routes>
       </main>
       <Footer />
