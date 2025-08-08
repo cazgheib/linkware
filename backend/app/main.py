@@ -26,6 +26,7 @@ app.add_middleware(
 users_db = {}
 blog_posts_db = {}
 memberships_db = {}
+content_db = {}
 
 SECRET_KEY = "your-secret-key-change-in-production"
 ALGORITHM = "HS256"
@@ -81,6 +82,16 @@ class MembershipUpgrade(BaseModel):
 class PaymentIntentCreate(BaseModel):
     membership_type: str
     payment_method_id: Optional[str] = None
+
+class ContentUpdate(BaseModel):
+    title: str
+    content: str
+
+class Content(BaseModel):
+    id: str
+    title: str
+    content: str
+    updated_at: datetime
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -289,6 +300,32 @@ async def get_blog_categories():
         categories.add(post["category"])
     return list(categories)
 
+@app.get("/api/content/about")
+async def get_about_content():
+    about_content = content_db.get("about")
+    if not about_content:
+        raise HTTPException(status_code=404, detail="About content not found")
+    return Content(**about_content)
+
+@app.put("/api/content/about")
+async def update_about_content(
+    content_data: ContentUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["membership_type"] != "enterprise" or current_user["email"] != "admin@linkware.com":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    about_content = {
+        "id": "about",
+        "title": content_data.title,
+        "content": content_data.content,
+        "updated_at": datetime.utcnow()
+    }
+    
+    content_db["about"] = about_content
+    
+    return Content(**about_content)
+
 @app.post("/api/membership/create-payment-intent")
 async def create_payment_intent(
     payment_data: PaymentIntentCreate,
@@ -397,3 +434,37 @@ async def startup_event():
         }
         
         blog_posts_db[post_id] = post
+    
+    default_about_content = {
+        "id": "about",
+        "title": "About Linkware Consulting",
+        "content": """Welcome to Linkware Consulting, your trusted partner in IT solutions for capital markets.
+
+Founded with a vision to bridge the gap between cutting-edge technology and financial services, we specialize in delivering innovative solutions that empower financial professionals to excel in today's dynamic markets.
+
+Our Expertise:
+• Algorithmic Trading Systems
+• Risk Management Infrastructure  
+• Cloud Computing Solutions
+• Regulatory Compliance Technology
+• Market Data Analytics
+• High-Performance Computing
+
+Our Mission:
+To provide world-class technology consulting and educational resources that enable financial institutions and professionals to leverage the latest innovations in capital markets technology.
+
+Our Team:
+Our experienced consultants combine deep financial markets knowledge with technical expertise in modern software development, cloud architecture, and data analytics. We understand the unique challenges facing capital markets firms and deliver solutions that are both technically sound and business-focused.
+
+Why Choose Linkware:
+• Industry-specific expertise in capital markets technology
+• Proven track record with leading financial institutions
+• Commitment to innovation and best practices
+• Comprehensive educational resources and thought leadership
+• Flexible engagement models to meet your specific needs
+
+Contact us today to learn how we can help transform your technology infrastructure and accelerate your business objectives.""",
+        "updated_at": datetime.utcnow()
+    }
+    
+    content_db["about"] = default_about_content

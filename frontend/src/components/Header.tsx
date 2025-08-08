@@ -48,12 +48,13 @@ export const Header: React.FC = () => {
             <Link to="/" className="text-gray-700 hover:text-blue-600 transition-colors">
               Home
             </Link>
-            {user && (
-              <Link to="/blog" className="text-gray-700 hover:text-blue-600 transition-colors flex items-center space-x-1">
-                <BookOpen size={16} />
-                <span>Blog</span>
-              </Link>
-            )}
+            <Link to="/blog" className="text-gray-700 hover:text-blue-600 transition-colors flex items-center space-x-1">
+              <BookOpen size={16} />
+              <span>Blog</span>
+            </Link>
+            <Link to="/about" className="text-gray-700 hover:text-blue-600 transition-colors">
+              About
+            </Link>
             {user && (
               <Link to="/membership" className="text-gray-700 hover:text-blue-600 transition-colors flex items-center space-x-1">
                 <Crown size={16} />
